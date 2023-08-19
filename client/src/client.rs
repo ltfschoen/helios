@@ -31,6 +31,36 @@ use crate::node::Node;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::rpc::Rpc;
 
+// Temporary in-memory database
+#[derive(Default)]
+pub struct TemporaryDB {
+    checkpoint: Option<Vec<u8>>,
+}
+
+impl TemporaryDB {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl Database for TemporaryDB {
+    pub fn new() -> Result<Self> {
+        Ok(Self::default())
+    }
+
+    pub fn load_checkpoint(&self) -> Result<Vec<u8>> {
+        self.checkpoint
+            .clone()
+            .ok_or_else(|| eyre::eyre!("No checkpoint found in the database"))
+    }
+
+    pub fn save_checkpoint(&self, checkpoint: Vec<u8>) -> Result<()> {
+        // For a temporary in-memory database, we simply update the checkpoint in memory.
+        self.checkpoint = Some(checkpoint);
+        Ok(())
+    }
+}
+
 #[derive(Default)]
 pub struct ClientBuilder {
     network: Option<Network>,
@@ -43,6 +73,7 @@ pub struct ClientBuilder {
     rpc_port: Option<u16>,
     #[cfg(not(target_arch = "wasm32"))]
     data_dir: Option<PathBuf>,
+    database: Option<TemporaryDB>,
     config: Option<Config>,
     fallback: Option<String>,
     load_external_fallback: bool,
@@ -85,6 +116,11 @@ impl ClientBuilder {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn data_dir(mut self, data_dir: PathBuf) -> Self {
         self.data_dir = Some(data_dir);
+        self
+    }
+
+    pub fn database(mut self, db: TemporaryDB) -> Self {
+        self.db = Some(db);
         self
     }
 
@@ -176,6 +212,14 @@ impl ClientBuilder {
             None
         };
 
+        let database = if self.database.is_some() {
+            self.database
+        } else {
+            warn!("config database not yet supported");
+
+            None
+        };
+
         let fallback = if self.fallback.is_some() {
             self.fallback
         } else if let Some(config) = &self.config {
@@ -213,6 +257,7 @@ impl ClientBuilder {
             data_dir,
             #[cfg(target_arch = "wasm32")]
             data_dir: None,
+            database,
             chain: base_config.chain,
             forks: base_config.forks,
             max_checkpoint_age: base_config.max_checkpoint_age,
