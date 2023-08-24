@@ -46,9 +46,104 @@ helios --execution-rpc $ETH_RPC_URL
 
 Helios will now run a local RPC server at `http://127.0.0.1:8545`.
 
-Helios provides examples in the [`examples/`](./examples/) directory. To run an example, you can execute `cargo run -p helios --example <example_name>` from inside the helios repository.
+Helios provides examples in the [`examples/`](./examples/) directory. To run an example, you can execute `cargo run -p helios --example <example_name>` from inside the helios repository. Replacing `<example_name>` with a filename from that directory excluding its file extension.
+
+> When running the examples you are using Helios as a library, so the config files (e.g. ~/.helios/helios.toml) and CLI arguments are not used, and instead all configuration is done using the `ClientBuilder`.
 
 Helios also provides documentation of its supported RPC methods in the [rpc.md](./rpc.md) file.
+
+### Running Helios Examples using Docker
+
+* Install [Docker](https://docs.docker.com/get-docker/)
+* Create .env file from .env.example file
+```
+cp .env.example .env
+```
+* Update .env file with the different API Keys that you obtain for Mainnet and Goerli
+> Execution API Provider for Ethereum must support the `eth_getProof` endpoint. [Alchemy](https://www.alchemy.com) provides endpoints that support that. e.g. the following cURL request should return a response https://docs.alchemy.com/reference/eth-getproof
+```
+curl https://ethereum-goerli-rpc.allthatnode.com \
+-X POST \
+-H "Content-Type: application/json" \
+-d '{"jsonrpc":"2.0","method":"eth_getProof","params":["0x7F0d15C7FAae65896648C8273B6d7E43f58Fa842",["0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421"],"latest"],"id":1}'
+```
+
+```
+curl https://ethereum-mainnet-rpc.allthatnode.com \
+-X POST \
+-H "Content-Type: application/json" \
+-d '{"jsonrpc":"2.0","method":"eth_getProof","params":["0x7F0d15C7FAae65896648C8273B6d7E43f58Fa842",["0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421"],"latest"],"id":1}'
+```
+
+* Obtain the latest checkpoints from the following links:
+    * Ethereum Mainnet https://beaconcha.in
+    * Goerli Testnet https://prater.beaconcha.in/
+
+    > It is recommmended to use a blockhash that is less than two weeks old.
+
+    > For example, to obtain a recent checkpoint for Goerli Testnet go to https://prater.beaconcha.in/ and get the blockhash of the first block in any finalised epoch. For example at the time of writing, the first blockhash in epoch 197110 https://prater.beaconcha.in/epoch/197110 is the oldest slot 6307520 https://prater.beaconcha.in/slot/6307520 that has a Block Root of 0x7beab8f82587b1e9f2079beddebde49c2ed5c0da4ce86ea22de6a6b2dc7aa86b and is the checkpoint value to use.
+
+    > For example, to obtain a recent checkpoint for Ethereum Mainnet, at the time of writing the first blockhash in epoch 222705 https://beaconcha.in/epoch/222705 is the oldest slot 7126560 https://beaconcha.in/slot/7126560 that has a Block Root of 0xe1912ca8ca3b45dac497cae7825bab055b0f60285533721b046e8fefb5b076f2 and is the checkpoint value to use.
+
+    > Normally, when it fails the fallback would kick in and automatically fetch a better checkpoint if that feature is working in this repository.
+
+    > While using checkpoints that are less than two weeks old is recommended, you can actually use older ones and it will still work (but will give you a warning). Using one that is less than two weeks old prevents a few attacks that are pretty hard to pull off.
+
+    > A checkpoint is a beaconchain blockhash rather than a execution block hash. An example of an execution block hash for Goerli are those shown at https://goerli.etherscan.io/blocks
+
+* Update checkpoints in .env file and in the config.md file for networks you will connect to using the latest checkpoints that you obtained.
+
+* Build and run Docker container
+```bash
+./docker/docker.sh
+```
+* Wait until it enters you into the Docker container...
+    * To exit the Docker container run CTRL-D or similar
+    * To re-enter Docker container run `docker exec -it helios /bin/bash`
+
+* Run an example (e.g. `cargo run -p helios --example basic`)
+```bash
+cargo run -p helios --example <example_name>
+```
+> If you change the .env file then you must run `export $(grep -v '^#' .env | xargs)` to set them as new shell environment variables before running the examples again for the new environment variables to be made available in your Helios library examples with `std::env::var`
+
+* To remove the Docker container and Docker image run:
+```bash
+docker stop helios && docker rm helios && docker rmi helios
+docker ps -a && docker images
+```
+
+#### Running Helios CLI using Docker
+
+* If you wish to use the configuration file instead of CLI arguments then you may create a configuration file using the example template
+    ```bash
+    mkdir -p ~/.helios
+    cp helios.example.toml ~/.helios/helios.toml
+    ```
+* Then populate that file using the example config.md file as reference before running any Helios commands as follows:
+    * Replace the example API Keys with those that you obtained from Alchemy
+    * Replace the example checkpoints with the latest checkpoints
+    * Replace the example data directories
+* If you modify and of the environment variables in the .env file, then it is necessary to run `export $(grep -v '^#' .env | xargs)` to set them as new shell environment variables that the configuration file may access.
+* Run a Helios Light Client node on Goerli
+```bash
+cargo run -- \
+    --network goerli \
+    --consensus-rpc http://testing.prater.beacon-api.nimbus.team \
+    --execution-rpc https://ethereum-goerli-rpc.allthatnode.com \
+    --checkpoint 0x7beab8f82587b1e9f2079beddebde49c2ed5c0da4ce86ea22de6a6b2dc7aa86b
+```
+* Run a Helios Light Client node on Mainnet
+```bash
+cargo run -- \
+    --network mainnet \
+    --consensus-rpc https://www.lightclientdata.org \
+    --execution-rpc https://ethereum-mainnet-rpc.allthatnode.com \
+    --checkpoint 0xe1912ca8ca3b45dac497cae7825bab055b0f60285533721b046e8fefb5b076f2
+```
+> Use all necessary CLI arguments at the command line since some configuration values are not yet being interpreted. See https://github.com/a16z/helios/issues/261
+
+Also if you want Helios to auto fetch you a bootstrap when it first runs (after that is saves later bootstraps as it find them), you can run with the -l flag.
 
 ### Warning
 
